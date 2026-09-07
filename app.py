@@ -5,7 +5,7 @@ from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from pymongo import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 from dotenv import load_dotenv
 from database import db
