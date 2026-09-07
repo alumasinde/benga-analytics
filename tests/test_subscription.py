@@ -1,7 +1,7 @@
 def test_signup_returns_public_user_with_free_plan(client):
     response = client.post(
         "/api/auth/signup",
-        json={"email": "free@example.com", "password": "strong-password"},
+        json={"first_name": "Free", "last_name": "User", "email": "free@example.com", "password": "strong-password", "confirm_password": "strong-password", "accepted_terms": True},
     )
 
     assert response.status_code == 201
