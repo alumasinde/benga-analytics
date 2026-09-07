@@ -1,42 +1,96 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BengaAnalytics | Enterprise BI</title>
-<script src="https://cdn.tailwindcss.com"></script><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
 <div class="flex min-h-screen">
-<aside class="w-72 bg-slate-900 border-r border-slate-800 p-5 flex flex-col">
-<h1 class="text-2xl font-bold">Benga<span class="text-cyan-400">Analytics</span></h1>
-<div id="profile" class="mt-8 p-4 rounded-xl bg-slate-800">Loading profile…</div>
-<div id="tier-card" class="mt-4 p-4 rounded-xl border border-cyan-700 bg-cyan-950/30"></div>
-<label class="mt-6 block text-sm font-medium">Upload Dataset</label>
-<input id="file-input" type="file" accept=".csv,.xlsx" class="mt-2 block w-full text-sm">
-<button id="upload-btn" class="mt-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold px-4 py-2 rounded-lg">Upload & Analyze</button>
-<p id="status" class="mt-3 text-sm text-slate-400"></p>
-<h2 class="mt-8 text-sm uppercase tracking-wider text-slate-400">Historical Datasets</h2>
-<div id="dataset-list" class="mt-3 space-y-2 overflow-y-auto"></div>
-</aside>
-<main class="flex-1 p-5 md:p-8 overflow-x-hidden">
-<div class="flex flex-col gap-4">
-<div class="flex flex-col lg:flex-row gap-3">
-<input id="global-search" placeholder="Search your data…" class="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400">
-<select id="aggregation" class="rounded-xl bg-slate-900 border border-slate-700 px-4"><option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option></select>
-<select id="metric-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
-<select id="group-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
-<select id="chart-type" class="rounded-xl bg-slate-900 border border-slate-700 px-4"><option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option></select>
+  <aside class="w-72 shrink-0 bg-slate-900 border-r border-slate-800 p-5 flex flex-col">
+    <h1 class="text-2xl font-bold">Benga<span class="text-cyan-400">Analytics</span></h1>
+    <p class="mt-1 text-xs text-slate-500">Dynamic business intelligence</p>
+
+    <div id="profile" class="mt-8 p-4 rounded-xl bg-slate-800">Checking account…</div>
+    <div id="tier-card" class="mt-4 p-4 rounded-xl border border-cyan-700 bg-cyan-950/30"></div>
+    <button id="logout-btn" class="hidden mt-3 text-sm text-slate-400 hover:text-white">Sign out</button>
+
+    <div id="workspace-controls" class="mt-6">
+      <label class="block text-sm font-medium">Upload Dataset</label>
+      <input id="file-input" type="file" accept=".csv,.xlsx" class="mt-2 block w-full text-sm">
+      <button id="upload-btn" class="mt-3 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg">Upload & Analyze</button>
+      <p id="status" class="mt-3 text-sm text-slate-400"></p>
+
+      <h2 class="mt-8 text-sm uppercase tracking-wider text-slate-400">Historical Datasets</h2>
+      <div id="dataset-list" class="mt-3 space-y-2 overflow-y-auto"></div>
+    </div>
+  </aside>
+
+  <main id="workspace" class="flex-1 p-5 md:p-8 overflow-x-hidden">
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-col lg:flex-row gap-3">
+        <input id="global-search" placeholder="Search your data…" class="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400">
+        <select id="aggregation" class="rounded-xl bg-slate-900 border border-slate-700 px-4">
+          <option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option>
+        </select>
+        <select id="metric-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
+        <select id="group-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
+        <select id="chart-type" class="rounded-xl bg-slate-900 border border-slate-700 px-4">
+          <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option>
+        </select>
+      </div>
+      <div id="dynamic-filters" class="flex flex-wrap gap-3"></div>
+    </div>
+
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-6">
+      <div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="main-chart"></canvas></div>
+      <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="secondary-chart"></canvas></div>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-5">
+      <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5">
+        <h2 class="font-semibold">Automated Insights</h2>
+        <ul id="insights" class="mt-3 space-y-3 text-slate-300"></ul>
+      </div>
+      <div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5 overflow-auto">
+        <h2 class="font-semibold mb-4">Raw Data Preview</h2>
+        <table id="raw-table" class="w-full text-sm text-left"></table>
+      </div>
+    </section>
+  </main>
 </div>
-<div id="dynamic-filters" class="flex flex-wrap gap-3"></div>
+
+<div id="auth-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl p-7">
+    <div class="text-center">
+      <h2 class="text-2xl font-bold">Welcome to <span class="text-cyan-400">BengaAnalytics</span></h2>
+      <p id="auth-description" class="mt-2 text-sm text-slate-400">Create your free account to start analyzing your data.</p>
+    </div>
+
+    <div class="mt-6 grid grid-cols-2 rounded-lg bg-slate-800 p-1">
+      <button id="show-login" class="auth-tab rounded-md py-2 text-sm font-medium">Sign in</button>
+      <button id="show-signup" class="auth-tab rounded-md py-2 text-sm font-medium">Create account</button>
+    </div>
+
+    <form id="auth-form" class="mt-6 space-y-4">
+      <label class="block text-sm">
+        <span class="text-slate-300">Email address</span>
+        <input id="auth-email" type="email" autocomplete="email" required class="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-3 outline-none focus:border-cyan-400">
+      </label>
+      <label class="block text-sm">
+        <span class="text-slate-300">Password</span>
+        <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required class="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-3 outline-none focus:border-cyan-400">
+      </label>
+      <p id="auth-error" class="hidden text-sm text-red-400"></p>
+      <button id="auth-submit" type="submit" class="w-full rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold py-3">Sign in</button>
+    </form>
+
+    <p class="mt-5 text-center text-xs text-slate-500">The Free plan is active now. Paid plans can be added without changing your account or data structure.</p>
+  </div>
 </div>
-<section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-6">
-<div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="main-chart"></canvas></div>
-<div class="bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="secondary-chart"></canvas></div>
-</section>
-<section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-5">
-<div class="bg-slate-900 rounded-2xl border border-slate-800 p-5"><h2 class="font-semibold">Automated Insights</h2><ul id="insights" class="mt-3 space-y-3 text-slate-300"></ul></div>
-<div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5 overflow-auto"><h2 class="font-semibold mb-4">Raw Data Preview</h2><table id="raw-table" class="w-full text-sm text-left"></table></div>
-</section>
-</main></div>
+
 <script src="/static/js/dashboard.js"></script>
-</body></html>
+</body>
+</html>
