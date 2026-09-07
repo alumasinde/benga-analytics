@@ -271,10 +271,10 @@ def query(user):
     value_expression = (
         {"$sum": 1}
         if aggregation == "count"
-        else ({"$sum": f"$${metric}"} if aggregation == "sum" else {"$avg": f"$${metric}"})
+        else ({"$sum": f"${metric}"} if aggregation == "sum" else {"$avg": f"${metric}"})
     )
 
-    group_id = f"$${group_by}" if group_by else None
+    group_id = f"${group_by}" if group_by else None
     result = list(db.records.aggregate([
         {"$match": match},
         {"$group": {"_id": group_id, "value": value_expression}},
