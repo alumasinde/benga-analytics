@@ -8,7 +8,9 @@ from werkzeug.utils import secure_filename
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 from dotenv import load_dotenv
-import database\n\ndb = database.init_database()
+import database
+
+db = database.init_database()
 from analyzer import read_dataframe, infer_and_clean, dataframe_records, build_insights
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
