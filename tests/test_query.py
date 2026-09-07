@@ -65,3 +65,54 @@ def test_invalid_metric_is_rejected(client):
         },
     )
     assert response.status_code == 400
+
+
+def test_dynamic_filters_and_search_are_applied(client):
+    dataset_id = setup_dataset(client)
+
+    filtered = client.post(
+        "/api/query",
+        json={
+            "dataset_id": dataset_id,
+            "aggregation": "sum",
+            "metric": "Revenue",
+            "group_by": "Region",
+            "filters": {"Product": ["Laptop"]},
+        },
+    )
+    assert filtered.status_code == 200
+    assert {row["label"]: row["value"] for row in filtered.get_json()["rows"]} == {
+        "Mombasa": 200,
+        "Nairobi": 100,
+    }
+
+    searched = client.post(
+        "/api/query",
+        json={
+            "dataset_id": dataset_id,
+            "aggregation": "sum",
+            "metric": "Revenue",
+            "group_by": "Region",
+            "search": "Nairobi",
+        },
+    )
+    assert searched.status_code == 200
+    assert searched.get_json()["rows"] == [{"label": "Nairobi", "value": 150.0}]
+
+
+def test_dynamic_count_query(client):
+    dataset_id = setup_dataset(client)
+    response = client.post(
+        "/api/query",
+        json={
+            "dataset_id": dataset_id,
+            "aggregation": "count",
+            "group_by": "Region",
+        },
+    )
+
+    assert response.status_code == 200
+    assert {row["label"]: row["value"] for row in response.get_json()["rows"]} == {
+        "Mombasa": 1.0,
+        "Nairobi": 2.0,
+    }
