@@ -81,6 +81,11 @@ def public_user(user):
     return {
         "id": str(user["_id"]),
         "email": user["email"],
+        "first_name": user.get("first_name", ""),
+        "last_name": user.get("last_name", ""),
+        "display_name": " ".join(
+            part for part in [user.get("first_name", ""), user.get("last_name", "")] if part
+        ) or user["email"],
         "tenant_id": user["tenant_id"],
         "active": bool(user.get("active", False)),
         "tier": normalized["tier"],
