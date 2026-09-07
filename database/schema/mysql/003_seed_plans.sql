@@ -1,0 +1,2 @@
+-- Subscription plan defaults are application configuration, not tenant data.
+-- This file intentionally contains no INSERT statements until a dedicated plans table is introduced.
