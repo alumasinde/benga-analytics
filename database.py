@@ -8,7 +8,7 @@ load_dotenv()
 class Database:
     """MongoDB access layer with explicit client injection for testability."""
 
-    def __init__(self, client=None, db_name=None, ensure_indexes=True):
+    def __init__(self, client=None, db_name=None, ensure_indexes=False):
         uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
         resolved_db_name = db_name or os.getenv("MONGODB_DB", "benga_analytics")
 
