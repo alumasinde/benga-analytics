@@ -7,6 +7,7 @@ from bson import ObjectId
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, session
 from pymongo.errors import DuplicateKeyError
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -89,6 +90,8 @@ def bad_value(error):
 
 @app.errorhandler(Exception)
 def unexpected_error(error):
+    if isinstance(error, HTTPException):
+        return error
     app.logger.exception(error)
     return jsonify({"error": "An unexpected server error occurred."}), 500
 
