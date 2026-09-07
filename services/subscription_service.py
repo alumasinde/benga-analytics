@@ -11,12 +11,9 @@ PLAN_CATALOG = {
         "max_datasets": 5,
         "max_saved_queries": 10,
         "features": {
-            "csv_upload": True,
-            "xlsx_upload": True,
-            "dynamic_filters": True,
-            "natural_language_search": True,
-            "advanced_exports": False,
-            "scheduled_refresh": False,
+            "csv_upload": True, "xlsx_upload": True,
+            "dynamic_filters": True, "natural_language_search": True,
+            "advanced_exports": False, "scheduled_refresh": False,
             "team_workspaces": False,
         },
     },
@@ -26,12 +23,9 @@ PLAN_CATALOG = {
         "max_datasets": 1_000_000,
         "max_saved_queries": 100_000,
         "features": {
-            "csv_upload": True,
-            "xlsx_upload": True,
-            "dynamic_filters": True,
-            "natural_language_search": True,
-            "advanced_exports": True,
-            "scheduled_refresh": True,
+            "csv_upload": True, "xlsx_upload": True,
+            "dynamic_filters": True, "natural_language_search": True,
+            "advanced_exports": True, "scheduled_refresh": True,
             "team_workspaces": True,
         },
     },
@@ -50,15 +44,10 @@ def build_subscription(tier=FREE):
     if tier not in PLAN_CATALOG:
         tier = FREE
     return {
-        "tier": tier,
-        "status": "active",
-        "billing_provider": None,
-        "billing_customer_id": None,
-        "subscription_id": None,
-        "current_period_start": None,
-        "current_period_end": None,
-        "cancel_at_period_end": False,
-        "updated_at": utcnow(),
+        "tier": tier, "status": "active", "billing_provider": None,
+        "billing_customer_id": None, "subscription_id": None,
+        "current_period_start": None, "current_period_end": None,
+        "cancel_at_period_end": False, "updated_at": utcnow().isoformat(),
     }
 
 
@@ -67,11 +56,10 @@ def normalize_user_subscription(user):
     tier = subscription.get("tier") or user.get("tier") or FREE
     if tier not in PLAN_CATALOG:
         tier = FREE
-    plan = plan_for(tier)
     return {
         "tier": tier,
         "status": subscription.get("status", "active"),
-        "plan": plan,
+        "plan": plan_for(tier),
         "subscription": subscription,
     }
 
@@ -79,12 +67,13 @@ def normalize_user_subscription(user):
 def public_user(user):
     normalized = normalize_user_subscription(user)
     return {
-        "id": str(user["_id"]),
+        "id": str(user["id"]),
         "email": user["email"],
         "first_name": user.get("first_name", ""),
         "last_name": user.get("last_name", ""),
         "display_name": " ".join(
-            part for part in [user.get("first_name", ""), user.get("last_name", "")] if part
+            part for part in [user.get("first_name", ""), user.get("last_name", "")]
+            if part
         ) or user["email"],
         "tenant_id": user["tenant_id"],
         "active": bool(user.get("active", False)),
@@ -101,7 +90,9 @@ def public_user(user):
         "subscription": {
             "status": normalized["status"],
             "current_period_end": normalized["subscription"].get("current_period_end"),
-            "cancel_at_period_end": bool(normalized["subscription"].get("cancel_at_period_end", False)),
+            "cancel_at_period_end": bool(
+                normalized["subscription"].get("cancel_at_period_end", False)
+            ),
         },
         "created_at": user.get("created_at"),
     }
