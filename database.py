@@ -1,40 +1,16 @@
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import (
     BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON,
     MetaData, String, Table, Column, create_engine, desc, func, or_, select,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.pool import StaticPool
-
-load_dotenv()
-
 
 class Database:
     """MySQL-backed persistence layer for BengaAnalytics."""
 
     def __init__(self, database_url=None, ensure_schema=False):
-        self.database_url = database_url or os.getenv(
-            "DATABASE_URL",
-            "mysql+pymysql://root@127.0.0.1:3306/benga_analytics?charset=utf8mb4",
-        )
-        options = {
-            "pool_pre_ping": True,
-            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
-        }
-        if self.database_url.startswith("sqlite"):
-            options.update({
-                "connect_args": {"check_same_thread": False},
-                "poolclass": StaticPool,
-            })
-        else:
-            options.update({
-                "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-                "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
-            })
-
-        self.engine = create_engine(self.database_url, **options)
+        self.database_url = database_url
+        from database.connection import create_database_engine
+        self.engine = create_database_engine(database_url)
         self.metadata = MetaData()
 
         self.users = Table(
