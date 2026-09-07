@@ -37,18 +37,21 @@ class Database:
         return list(index.get("key", {}).items()) == list(keys)
 
     def _ensure_index(self, collection, keys, *, name, unique=False):
-        """Create or reconcile an index definition without startup conflicts."""
-        existing = next(
-            (index for index in collection.list_indexes() if index.get("name") == name),
+        """Create or reconcile current and legacy index definitions safely."""
+        indexes = list(collection.list_indexes())
+        matching_key_index = next(
+            (index for index in indexes if self._keys_match(index, keys)),
+            None,
+        )
+        named_index = next(
+            (index for index in indexes if index.get("name") == name),
             None,
         )
 
-        if existing:
-            matches_keys = self._keys_match(existing, keys)
-            matches_unique = bool(existing.get("unique", False)) == unique
-
-            if matches_keys and matches_unique:
-                return name
+        if matching_key_index:
+            matches_unique = bool(matching_key_index.get("unique", False)) == unique
+            if matches_unique:
+                return matching_key_index["name"]
 
             if unique:
                 fields = [field for field, _ in keys]
@@ -78,11 +81,15 @@ class Database:
                 )
                 if duplicate:
                     raise RuntimeError(
-                        f"Cannot upgrade index '{name}' to unique because duplicate "
-                        f"values already exist for {fields}. Resolve the duplicate "
-                        "documents before restarting BengaAnalytics."
+                        f"Cannot upgrade index '{matching_key_index['name']}' to unique "
+                        f"because duplicate values already exist for {fields}. Resolve "
+                        "the duplicate documents before restarting BengaAnalytics."
                     )
 
+            collection.drop_index(matching_key_index["name"])
+            named_index = None
+
+        if named_index:
             collection.drop_index(name)
 
         return collection.create_index(keys, name=name, unique=unique)
