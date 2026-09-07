@@ -1,149 +1,260 @@
 import os
 
 from dotenv import load_dotenv
-from pymongo import ASCENDING, DESCENDING, MongoClient
+from sqlalchemy import (
+    BigInteger, Boolean, DateTime, Float, ForeignKey, Index, JSON,
+    MetaData, String, Table, Column, create_engine, desc, func, or_, select,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
 
 class Database:
-    """MongoDB access layer with explicit client injection for testability."""
+    """MySQL-backed persistence layer for BengaAnalytics."""
 
-    def __init__(self, client=None, db_name=None, ensure_indexes=False):
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-        resolved_db_name = db_name or os.getenv("MONGODB_DB", "benga_analytics")
+    def __init__(self, database_url=None, ensure_schema=False):
+        self.database_url = database_url or os.getenv(
+            "DATABASE_URL",
+            "mysql+pymysql://root@127.0.0.1:3306/benga_analytics?charset=utf8mb4",
+        )
+        options = {
+            "pool_pre_ping": True,
+            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        }
+        if self.database_url.startswith("sqlite"):
+            options.update({
+                "connect_args": {"check_same_thread": False},
+                "poolclass": StaticPool,
+            })
+        else:
+            options.update({
+                "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+                "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+            })
 
-        self.client = client or MongoClient(
-            uri,
-            maxPoolSize=int(os.getenv("MONGO_MAX_POOL_SIZE", "100")),
-            minPoolSize=int(os.getenv("MONGO_MIN_POOL_SIZE", "5")),
-            retryWrites=True,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=10000,
-        )
-        self.db = self.client[resolved_db_name]
-        self.users = self.db.users
-        self.datasets = self.db.datasets
-        self.records = self.db.records
-        self.usage = self.db.usage
-        self.saved_queries = self.db.saved_queries
-        self.audit_logs = self.db.audit_logs
+        self.engine = create_engine(self.database_url, **options)
+        self.metadata = MetaData()
 
-        if ensure_indexes:
-            self.ensure_indexes()
+        self.users = Table(
+            "users", self.metadata,
+            Column("id", String(36), primary_key=True),
+            Column("tenant_id", String(36), nullable=False, unique=True),
+            Column("first_name", String(80), nullable=False),
+            Column("last_name", String(80), nullable=False),
+            Column("email", String(255), nullable=False, unique=True),
+            Column("password_hash", String(255), nullable=False),
+            Column("tier", String(50), nullable=False),
+            Column("subscription", JSON, nullable=False),
+            Column("terms", JSON, nullable=False),
+            Column("active", Boolean, nullable=False, default=True),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+            Column("updated_at", DateTime(timezone=True), nullable=False),
+        )
+        self.datasets = Table(
+            "datasets", self.metadata,
+            Column("id", String(36), primary_key=True),
+            Column("tenant_id", String(36), nullable=False),
+            Column("owner_id", String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
+            Column("filename", String(255), nullable=False),
+            Column("status", String(30), nullable=False),
+            Column("schema_metadata", JSON, nullable=False),
+            Column("row_count", BigInteger, nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+            Column("updated_at", DateTime(timezone=True), nullable=False),
+            Index("ix_datasets_tenant_created", "tenant_id", "created_at"),
+            Index("ix_datasets_owner_created", "owner_id", "created_at"),
+        )
+        self.records = Table(
+            "records", self.metadata,
+            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("dataset_id", String(36), ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
+            Column("tenant_id", String(36), nullable=False),
+            Column("row_data", JSON, nullable=False),
+            Index("ix_records_dataset_tenant", "dataset_id", "tenant_id"),
+        )
+        self.usage = Table(
+            "usage", self.metadata,
+            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("tenant_id", String(36), nullable=False),
+            Column("period_key", String(32), nullable=False),
+            Column("counter_name", String(80), nullable=False),
+            Column("value", BigInteger, nullable=False, default=0),
+            Column("updated_at", DateTime(timezone=True), nullable=False),
+            Index("uq_usage_tenant_period_counter", "tenant_id", "period_key", "counter_name", unique=True),
+        )
+        self.saved_queries = Table(
+            "saved_queries", self.metadata,
+            Column("id", String(36), primary_key=True),
+            Column("tenant_id", String(36), nullable=False),
+            Column("dataset_id", String(36), ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
+            Column("name", String(120), nullable=False),
+            Column("query_config", JSON, nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+            Index("ix_saved_queries_tenant_dataset", "tenant_id", "dataset_id"),
+        )
+        self.audit_logs = Table(
+            "audit_logs", self.metadata,
+            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("tenant_id", String(36), nullable=False),
+            Column("actor_id", String(36), nullable=True),
+            Column("event_type", String(120), nullable=False),
+            Column("event_data", JSON, nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+            Index("ix_audit_logs_tenant_created", "tenant_id", "created_at"),
+        )
+        if ensure_schema:
+            self.ensure_schema()
 
-    @staticmethod
-    def _keys_match(index, keys):
-        return list(index.get("key", {}).items()) == list(keys)
-
-    def _ensure_index(self, collection, keys, *, name, unique=False):
-        """Create or reconcile current and legacy index definitions safely."""
-        indexes = list(collection.list_indexes())
-        matching_key_index = next(
-            (index for index in indexes if self._keys_match(index, keys)),
-            None,
-        )
-        named_index = next(
-            (index for index in indexes if index.get("name") == name),
-            None,
-        )
-
-        if matching_key_index:
-            matches_unique = bool(matching_key_index.get("unique", False)) == unique
-            if matches_unique:
-                return matching_key_index["name"]
-
-            if unique:
-                fields = [field for field, _ in keys]
-                duplicate = next(
-                    collection.aggregate(
-                        [
-                            {
-                                "$match": {
-                                    field: {"$exists": True, "$ne": None}
-                                    for field in fields
-                                }
-                            },
-                            {
-                                "$group": {
-                                    "_id": {
-                                        field: "$" + field
-                                        for field in fields
-                                    },
-                                    "count": {"$sum": 1},
-                                }
-                            },
-                            {"$match": {"count": {"$gt": 1}}},
-                            {"$limit": 1},
-                        ]
-                    ),
-                    None,
-                )
-                if duplicate:
-                    raise RuntimeError(
-                        f"Cannot upgrade index '{matching_key_index['name']}' to unique "
-                        f"because duplicate values already exist for {fields}. Resolve "
-                        "the duplicate documents before restarting BengaAnalytics."
-                    )
-
-            collection.drop_index(matching_key_index["name"])
-            named_index = None
-
-        if named_index:
-            collection.drop_index(name)
-
-        return collection.create_index(keys, name=name, unique=unique)
-
-    def ensure_indexes(self):
-        self._ensure_index(
-            self.users,
-            [("email", ASCENDING)],
-            name="users_email_unique",
-            unique=True,
-        )
-        self._ensure_index(
-            self.users,
-            [("tenant_id", ASCENDING)],
-            name="users_tenant_id_unique",
-            unique=True,
-        )
-        self._ensure_index(
-            self.datasets,
-            [("tenant_id", ASCENDING), ("created_at", DESCENDING)],
-            name="datasets_tenant_created_at",
-        )
-        self._ensure_index(
-            self.datasets,
-            [("owner_id", ASCENDING), ("created_at", DESCENDING)],
-            name="datasets_owner_created_at",
-        )
-        self._ensure_index(
-            self.records,
-            [("dataset_id", ASCENDING)],
-            name="records_dataset_id",
-        )
-        self._ensure_index(
-            self.usage,
-            [("tenant_id", ASCENDING), ("period_key", ASCENDING)],
-            name="usage_tenant_period_unique",
-            unique=True,
-        )
-        self._ensure_index(
-            self.saved_queries,
-            [("tenant_id", ASCENDING), ("dataset_id", ASCENDING)],
-            name="saved_queries_tenant_dataset",
-        )
-        self._ensure_index(
-            self.audit_logs,
-            [("tenant_id", ASCENDING), ("created_at", DESCENDING)],
-            name="audit_logs_tenant_created_at",
-        )
+    def ensure_schema(self):
+        self.metadata.create_all(self.engine)
 
     def ping(self):
-        self.client.admin.command("ping")
+        with self.engine.connect() as connection:
+            connection.execute(select(1))
 
     def close(self):
-        self.client.close()
+        self.engine.dispose()
+
+    @staticmethod
+    def _row(row):
+        return dict(row._mapping) if row else None
+
+    @staticmethod
+    def _json_path(field):
+        escaped = str(field).replace("\\", "\\\\").replace('"', '\\"')
+        return '$."' + escaped + '"'
+
+    def _json_scalar(self, field):
+        path = self._json_path(field)
+        if self.engine.dialect.name == "sqlite":
+            return func.json_extract(self.records.c.row_data, path)
+        return func.JSON_UNQUOTE(func.JSON_EXTRACT(self.records.c.row_data, path))
+
+    def create_user(self, user):
+        with self.engine.begin() as connection:
+            connection.execute(self.users.insert().values(**user))
+
+    def get_user_by_id(self, user_id):
+        with self.engine.connect() as connection:
+            return self._row(connection.execute(
+                select(self.users).where(
+                    self.users.c.id == user_id,
+                    self.users.c.active.is_(True),
+                )
+            ).first())
+
+    def get_user_by_email(self, email):
+        with self.engine.connect() as connection:
+            return self._row(connection.execute(
+                select(self.users).where(
+                    self.users.c.email == email,
+                    self.users.c.active.is_(True),
+                )
+            ).first())
+
+    def count_datasets(self, tenant_id):
+        with self.engine.connect() as connection:
+            return connection.execute(
+                select(func.count()).select_from(self.datasets).where(
+                    self.datasets.c.tenant_id == tenant_id
+                )
+            ).scalar_one()
+
+    def list_datasets(self, tenant_id, limit=100):
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(self.datasets)
+                .where(self.datasets.c.tenant_id == tenant_id)
+                .order_by(desc(self.datasets.c.created_at))
+                .limit(limit)
+            ).all()
+            return [self._row(row) for row in rows]
+
+    def get_dataset(self, dataset_id, tenant_id):
+        with self.engine.connect() as connection:
+            return self._row(connection.execute(
+                select(self.datasets).where(
+                    self.datasets.c.id == dataset_id,
+                    self.datasets.c.tenant_id == tenant_id,
+                )
+            ).first())
+
+    def create_dataset_with_records(self, dataset, records, batch_size=5000):
+        with self.engine.begin() as connection:
+            connection.execute(self.datasets.insert().values(**dataset))
+            for offset in range(0, len(records), batch_size):
+                connection.execute(
+                    self.records.insert(),
+                    records[offset:offset + batch_size],
+                )
+
+    def query_records(
+        self, *, dataset_id, tenant_id, aggregation, metric, group_by,
+        filters, search, dimensions,
+    ):
+        conditions = [
+            self.records.c.dataset_id == dataset_id,
+            self.records.c.tenant_id == tenant_id,
+        ]
+        for field, values in filters.items():
+            if values:
+                conditions.append(
+                    self._json_scalar(field).in_(
+                        [str(value) for value in values[:1000]]
+                    )
+                )
+        if search and dimensions:
+            pattern = f"%{search[:200].lower()}%"
+            conditions.append(or_(*[
+                func.lower(self._json_scalar(field)).like(pattern)
+                for field in dimensions
+            ]))
+
+        if aggregation == "count":
+            value_expr = func.count()
+        else:
+            metric_expr = self._json_scalar(metric).cast(Float)
+            value_expr = (
+                func.sum(metric_expr)
+                if aggregation == "sum"
+                else func.avg(metric_expr)
+            )
+
+        with self.engine.connect() as connection:
+            if group_by:
+                label_expr = self._json_scalar(group_by).label("label")
+                statement = (
+                    select(label_expr, value_expr.label("value"))
+                    .where(*conditions)
+                    .group_by(label_expr)
+                    .order_by(desc(value_expr))
+                    .limit(1000)
+                )
+                grouped = [
+                    {
+                        "label": str(row.label) if row.label is not None else "Unknown",
+                        "value": float(row.value or 0),
+                    }
+                    for row in connection.execute(statement).all()
+                ]
+            else:
+                value = connection.execute(
+                    select(value_expr.label("value")).where(*conditions)
+                ).scalar_one()
+                grouped = [{"label": "All Records", "value": float(value or 0)}]
+
+            raw = [
+                row.row_data
+                for row in connection.execute(
+                    select(self.records.c.row_data)
+                    .where(*conditions)
+                    .order_by(self.records.c.id.asc())
+                    .limit(100)
+                ).all()
+            ]
+        return grouped, raw
 
 
 db = None
@@ -154,3 +265,6 @@ def init_database():
     if db is None:
         db = Database()
     return db
+
+
+__all__ = ["Database", "IntegrityError", "init_database"]
