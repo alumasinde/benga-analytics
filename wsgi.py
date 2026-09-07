@@ -1,5 +1,7 @@
 from app import app, db
 
-# Production WSGI startup path: verify connectivity and create required indexes once.
+# Production WSGI startup path.
+# The schema is idempotently created here until a dedicated migration
+# workflow is introduced in the next database architecture phase.
 db.ping()
-db.ensure_indexes()
+db.ensure_schema()
