@@ -49,3 +49,21 @@ On first startup BengaAnalytics creates the relational schema and indexes.
 GitHub Actions runs the test suite on Python 3.11 and 3.12. The test suite uses an isolated in-memory SQL database so CI remains fast and does not depend on an external server.
 
 Production uses MySQL through SQLAlchemy with PyMySQL, connection pooling, pre-ping and connection recycling.
+
+## Database schema and migrations
+
+The repository contains the production MySQL schema in:
+
+- `database/schema/mysql/001_initial_schema.sql`
+- `database/schema/mysql/002_indexes.sql`
+- `database/schema/mysql/003_seed_plans.sql`
+
+For a fresh manual MySQL installation, run the SQL files in numeric order after creating the database.
+
+For version-controlled application migrations:
+
+~~~powershell
+alembic upgrade head
+~~~
+
+The migration environment reads `DATABASE_URL` from your environment. Do not use automatic schema creation as a replacement for migrations in a managed production deployment.
