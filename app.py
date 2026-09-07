@@ -11,7 +11,9 @@ from werkzeug.utils import secure_filename
 
 from config.settings import get_settings
 from database import init_database
-from analyzer import build_insights, dataframe_records, infer_and_clean, read_dataframe
+from services.auth_service import AuthService
+from services.dataset_service import DatasetService
+from services.query_service import QueryService
 from services.subscription_service import (
     FREE,
     build_subscription,
@@ -53,12 +55,16 @@ def serialize(value):
     return value
 
 
+def services():
+    return AuthService(db), DatasetService(db), QueryService(db)
+
+
 def current_user():
     user_id = session.get("user_id")
     if not user_id:
         return None
     try:
-        return db.get_user_by_id(valid_uuid(user_id))
+        return AuthService(db).get_user(valid_uuid(user_id))
     except ValueError:
         session.clear()
         return None
@@ -117,54 +123,10 @@ def privacy():
 
 @app.post("/api/auth/signup")
 def signup():
-    payload = request.get_json(silent=True) or {}
-    first_name = " ".join(str(payload.get("first_name", "")).strip().split())
-    last_name = " ".join(str(payload.get("last_name", "")).strip().split())
-    email = str(payload.get("email", "")).strip().lower()
-    password = str(payload.get("password", ""))
-    confirm_password = str(payload.get("confirm_password", ""))
-    accepted_terms = payload.get("accepted_terms") is True
-
-    if not 1 <= len(first_name) <= 80:
-        return jsonify({"error": "Enter a valid first name."}), 400
-    if not 1 <= len(last_name) <= 80:
-        return jsonify({"error": "Enter a valid last name."}), 400
-    if not email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        return jsonify({"error": "Enter a valid email address."}), 400
-    if len(password) < 8:
-        return jsonify({"error": "Password must contain at least 8 characters."}), 400
-    if password != confirm_password:
-        return jsonify({"error": "Passwords do not match."}), 400
-    if not accepted_terms:
-        return jsonify({
-            "error": "You must accept the Terms of Service and Privacy Policy."
-        }), 400
-
-    created = now()
-    user = {
-        "id": str(uuid.uuid4()),
-        "first_name": first_name,
-        "last_name": last_name,
-        "email": email,
-        "password_hash": generate_password_hash(password),
-        "tenant_id": str(uuid.uuid4()),
-        "tier": FREE,
-        "subscription": build_subscription(FREE),
-        "terms": {
-            "accepted": True,
-            "accepted_at": created.isoformat(),
-            "version": "1.0",
-        },
-        "active": True,
-        "created_at": created,
-        "updated_at": created,
-    }
-
     try:
-        db.create_user(user)
+        user = AuthService(db).signup(request.get_json(silent=True) or {})
     except IntegrityError:
         return jsonify({"error": "An account already exists for this email."}), 409
-
     session.clear()
     session["user_id"] = user["id"]
     return jsonify({"user": serialize(public_user(user))}), 201
@@ -173,13 +135,9 @@ def signup():
 @app.post("/api/auth/login")
 def login():
     payload = request.get_json(silent=True) or {}
-    email = str(payload.get("email", "")).strip().lower()
-    password = str(payload.get("password", ""))
-
-    user = db.get_user_by_email(email)
-    if not user or not check_password_hash(user["password_hash"], password):
+    user = AuthService(db).authenticate(payload.get("email", ""), payload.get("password", ""))
+    if not user:
         return jsonify({"error": "Invalid email or password."}), 401
-
     session.clear()
     session["user_id"] = user["id"]
     return jsonify({"user": serialize(public_user(user))})
@@ -212,7 +170,7 @@ def plans():
 @app.get("/api/datasets")
 @login_required
 def list_datasets(user):
-    rows = db.list_datasets(user["tenant_id"], limit=100)
+    rows = DatasetService(db).list(user["tenant_id"])
     return jsonify({"datasets": serialize(rows)})
 
 
@@ -237,48 +195,15 @@ def upload(user):
             "subscription_status": subscription_state["status"],
         }), 403
 
-    dataset_count = db.count_datasets(user["tenant_id"])
+    dataset_count = DatasetService(db).count(user["tenant_id"])
     if dataset_count >= plan["max_datasets"]:
         return jsonify({
             "error": f"Dataset limit reached for the {plan['name']} plan.",
             "limit": plan["max_datasets"],
         }), 403
 
-    df = read_dataframe(file)
-    if len(df) > plan["max_rows_per_dataset"]:
-        return jsonify({
-            "error": (
-                f"Your {plan['name']} plan allows "
-                f"{plan['max_rows_per_dataset']:,} rows per dataset."
-            ),
-            "limit": plan["max_rows_per_dataset"],
-        }), 403
-
-    df, metadata = infer_and_clean(df)
-    dataset_id = str(uuid.uuid4())
-    created = now()
-    dataset = {
-        "id": dataset_id,
-        "tenant_id": user["tenant_id"],
-        "owner_id": user["id"],
-        "filename": filename,
-        "created_at": created,
-        "updated_at": created,
-        "status": "ready",
-        "schema_metadata": metadata,
-        "row_count": metadata["row_count"],
-    }
-
-    records = [
-        {
-            "dataset_id": dataset_id,
-            "tenant_id": user["tenant_id"],
-            "row_data": row,
-        }
-        for row in dataframe_records(df)
-    ]
-
-    db.create_dataset_with_records(dataset, records)
+    dataset, metadata = DatasetService(db).ingest(user, file)
+    dataset_id = dataset["id"]
 
     response_dataset = {
         "_id": dataset["id"],
@@ -309,56 +234,11 @@ def upload(user):
 def query(user):
     payload = request.get_json(silent=True) or {}
     dataset_id = valid_uuid(payload.get("dataset_id", ""))
-    dataset = db.get_dataset(dataset_id, user["tenant_id"])
+    dataset = DatasetService(db).get(dataset_id, user["tenant_id"])
     if not dataset:
         return jsonify({"error": "Dataset not found."}), 404
-
-    schema = dataset["schema_metadata"]
-    dimensions = set(schema.get("dimensions", []))
-    metrics = set(schema.get("metrics", []))
-    dates = set(schema.get("dates", []))
-
-    aggregation = str(payload.get("aggregation", "sum")).lower()
-    metric = payload.get("metric")
-    group_by = payload.get("group_by")
-    filters = payload.get("filters", {}) or {}
-    search = str(payload.get("search", "")).strip()
-
-    if aggregation not in {"sum", "avg", "count"}:
-        return jsonify({"error": "Unsupported aggregation."}), 400
-    if group_by and group_by not in dimensions and group_by not in dates:
-        return jsonify({"error": "Invalid grouping field."}), 400
-    if aggregation != "count" and metric not in metrics:
-        return jsonify({"error": "Choose a valid numerical metric."}), 400
-    if not isinstance(filters, dict):
-        return jsonify({"error": "Filters must be an object."}), 400
-
-    valid_filters = {}
-    for field, values in filters.items():
-        if field in dimensions and isinstance(values, list) and values:
-            valid_filters[field] = values[:1000]
-
-    rows, raw = db.query_records(
-        dataset_id=dataset_id,
-        tenant_id=user["tenant_id"],
-        aggregation=aggregation,
-        metric=metric,
-        group_by=group_by,
-        filters=valid_filters,
-        search=search,
-        dimensions=list(dimensions),
-    )
-
-    return jsonify({
-        "rows": serialize(rows),
-        "raw_records": serialize(raw),
-        "insights": build_insights(rows, metric, aggregation, group_by),
-        "query": {
-            "metric": metric,
-            "aggregation": aggregation,
-            "group_by": group_by,
-        },
-    })
+    result = QueryService(db).execute(dataset=dataset, dataset_id=dataset_id, tenant_id=user["tenant_id"], payload=payload)
+    return jsonify(serialize(result))
 
 
 if __name__ == "__main__":
