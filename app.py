@@ -101,21 +101,40 @@ def home():
 @app.post("/api/auth/signup")
 def signup():
     payload = request.get_json(silent=True) or {}
+    first_name = " ".join(str(payload.get("first_name", "")).strip().split())
+    last_name = " ".join(str(payload.get("last_name", "")).strip().split())
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
+    confirm_password = str(payload.get("confirm_password", ""))
+    accepted_terms = payload.get("accepted_terms") is True
 
+    if not 1 <= len(first_name) <= 80:
+        return jsonify({"error": "Enter a valid first name."}), 400
+    if not 1 <= len(last_name) <= 80:
+        return jsonify({"error": "Enter a valid last name."}), 400
     if not email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         return jsonify({"error": "Enter a valid email address."}), 400
     if len(password) < 8:
         return jsonify({"error": "Password must contain at least 8 characters."}), 400
+    if password != confirm_password:
+        return jsonify({"error": "Passwords do not match."}), 400
+    if not accepted_terms:
+        return jsonify({"error": "You must accept the Terms of Service and Privacy Policy."}), 400
 
     created = now()
     user = {
+        "first_name": first_name,
+        "last_name": last_name,
         "email": email,
         "password_hash": generate_password_hash(password),
         "tenant_id": str(uuid.uuid4()),
         "tier": FREE,
         "subscription": build_subscription(FREE),
+        "terms": {
+            "accepted": True,
+            "accepted_at": created,
+            "version": "1.0",
+        },
         "active": True,
         "created_at": created,
         "updated_at": created,
