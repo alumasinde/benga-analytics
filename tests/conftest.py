@@ -1,13 +1,13 @@
 import mongomock
 import pytest
 
+# Import the application only after tests configure an isolated database.
 from app import app
 from database import Database
 
 
 @pytest.fixture()
 def client(monkeypatch):
-    """Create a fresh isolated application database for every test."""
     test_database = Database(
         client=mongomock.MongoClient(),
         db_name="benga_test",
