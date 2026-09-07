@@ -98,6 +98,16 @@ def home():
     return send_from_directory("templates", "dashboard.html")
 
 
+@app.get("/terms")
+def terms():
+    return send_from_directory("templates", "terms.html")
+
+
+@app.get("/privacy")
+def privacy():
+    return send_from_directory("templates", "privacy.html")
+
+
 @app.post("/api/auth/signup")
 def signup():
     payload = request.get_json(silent=True) or {}
