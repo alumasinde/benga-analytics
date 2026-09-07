@@ -11,14 +11,18 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 function status(message, error = false) {
-  $("status").textContent = message;
-  $("status").className = error
-    ? "mt-3 text-sm text-red-400"
-    : "mt-3 text-sm text-slate-400";
+  const element = $("status");
+  element.textContent = message;
+  element.className = error
+    ? "mt-3 text-sm text-red-600"
+    : "mt-3 text-sm text-slate-500";
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+  });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || "Request failed.");
   return body;
@@ -44,8 +48,12 @@ function setUnauthenticated() {
   state.user = null;
   state.datasetId = null;
   state.metadata = null;
-  $("profile").textContent = "Create an account or sign in";
-  $("tier-card").innerHTML = '<span class="font-semibold text-cyan-300">Free plan available</span><br><span class="text-sm text-slate-400">Create an account to start.</span>';
+  $("profile").innerHTML =
+    '<div class="font-semibold text-slate-700">Welcome to BengaAnalytics</div>' +
+    '<div class="mt-1 text-xs text-slate-500">Create an account or sign in to continue.</div>';
+  $("tier-card").innerHTML =
+    '<div class="font-semibold text-teal-700">Free plan available</div>' +
+    '<div class="mt-1 text-xs text-teal-700/80">Create an account to start analyzing your data.</div>';
   $("auth-modal").classList.remove("hidden");
   $("workspace").classList.add("pointer-events-none", "opacity-40");
   $("workspace-controls").classList.add("pointer-events-none", "opacity-40");
@@ -53,18 +61,20 @@ function setUnauthenticated() {
 }
 
 function renderUser(user) {
+  const name = user.display_name || user.email;
   $("profile").innerHTML =
-    '<div class="font-medium truncate">' + escapeHtml(user.email) + '</div>' +
-    '<div class="mt-1 text-xs text-slate-400">Personal workspace</div>';
+    '<div class="font-semibold text-slate-800 truncate">' + escapeHtml(name) + '</div>' +
+    '<div class="mt-1 truncate text-xs text-slate-500">' + escapeHtml(user.email) + '</div>' +
+    '<div class="mt-2 text-xs font-medium text-teal-700">Personal workspace</div>';
 
   const plan = user.plan || {};
   const limits = plan.limits || {};
   $("tier-card").innerHTML =
-    '<div class="font-semibold text-cyan-300">' + escapeHtml(plan.name || user.tier || "Free") + '</div>' +
-    '<div class="mt-1 text-xs text-slate-300">' +
+    '<div class="font-semibold text-teal-700">' + escapeHtml(plan.name || user.tier || "Free") + '</div>' +
+    '<div class="mt-1 text-xs leading-5 text-teal-800">' +
     'Up to ' + Number(limits.max_rows_per_dataset || 0).toLocaleString() +
-    ' rows per dataset · ' + Number(limits.max_datasets || 0).toLocaleString() +
-    ' datasets</div>';
+    ' rows per dataset<br>' + Number(limits.max_datasets || 0).toLocaleString() +
+    ' datasets in your workspace</div>';
 }
 
 function renderMetadata(metadata) {
@@ -75,29 +85,39 @@ function renderMetadata(metadata) {
   metric.innerHTML = "";
   group.innerHTML = "";
 
-  metadata.metrics.forEach((value) => option(metric, value));
-  [...metadata.dimensions, ...metadata.dates].forEach((value) => option(group, value));
+  if (metadata.metrics.length) {
+    metadata.metrics.forEach((value) => option(metric, value));
+  } else {
+    option(metric, "", "No numerical metrics");
+  }
+
+  if (metadata.dimensions.length || metadata.dates.length) {
+    [...metadata.dimensions, ...metadata.dates].forEach((value) => option(group, value));
+  } else {
+    option(group, "", "No grouping field");
+  }
 
   const host = $("dynamic-filters");
   host.innerHTML = "";
 
   metadata.dimensions.forEach((field) => {
     const wrapper = document.createElement("details");
-    wrapper.className = "relative bg-slate-900 border border-slate-700 rounded-xl px-3 py-2";
+    wrapper.className = "relative rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm";
 
     const summary = document.createElement("summary");
-    summary.className = "cursor-pointer select-none";
+    summary.className = "cursor-pointer select-none text-sm font-medium text-slate-700";
     summary.textContent = field;
 
     const box = document.createElement("div");
-    box.className = "absolute z-20 mt-3 left-0 max-h-64 overflow-auto min-w-56 p-3 bg-slate-800 border border-slate-600 rounded-xl shadow-xl";
+    box.className = "absolute left-0 z-20 mt-3 max-h-64 min-w-60 overflow-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl";
 
     (metadata.categorical_values[field] || []).forEach((value) => {
       const label = document.createElement("label");
-      label.className = "flex gap-2 py-1 text-sm";
+      label.className = "flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50";
 
       const input = document.createElement("input");
       input.type = "checkbox";
+      input.className = "h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500";
       input.dataset.field = field;
       input.value = value;
       input.addEventListener("change", scheduleQuery);
@@ -123,7 +143,21 @@ function selectedFilters() {
 function chartData(rows) {
   return {
     labels: rows.map((row) => row.label),
-    datasets: [{ label: "Analysis", data: rows.map((row) => row.value) }],
+    datasets: [{
+      label: "Analysis",
+      data: rows.map((row) => row.value),
+      backgroundColor: [
+        "rgba(20, 184, 166, 0.75)",
+        "rgba(14, 165, 233, 0.70)",
+        "rgba(99, 102, 241, 0.65)",
+        "rgba(16, 185, 129, 0.65)",
+        "rgba(245, 158, 11, 0.65)",
+        "rgba(244, 114, 182, 0.60)",
+      ],
+      borderColor: "#0f766e",
+      borderWidth: 2,
+      tension: 0.35,
+    }],
   };
 }
 
@@ -134,16 +168,35 @@ function drawCharts(rows) {
   if (state.mainChart) state.mainChart.destroy();
   if (state.secondaryChart) state.secondaryChart.destroy();
 
+  const shared = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: "#475569", usePointStyle: true } },
+    },
+  };
+
   state.mainChart = new Chart($("main-chart"), {
     type,
     data,
-    options: { responsive: true, plugins: { legend: { labels: { color: "#e2e8f0" } } } },
+    options: {
+      ...shared,
+      scales: type === "pie" ? {} : {
+        x: { ticks: { color: "#64748b" }, grid: { color: "#f1f5f9" } },
+        y: { ticks: { color: "#64748b" }, grid: { color: "#e2e8f0" } },
+      },
+    },
   });
 
   state.secondaryChart = new Chart($("secondary-chart"), {
     type: "doughnut",
     data,
-    options: { responsive: true, plugins: { legend: { position: "bottom", labels: { color: "#e2e8f0" } } } },
+    options: {
+      ...shared,
+      plugins: {
+        legend: { position: "bottom", labels: { color: "#475569", boxWidth: 12 } },
+      },
+    },
   });
 }
 
@@ -152,17 +205,18 @@ function renderTable(records) {
   table.innerHTML = "";
 
   if (!records.length) {
-    table.textContent = "No matching records.";
+    table.innerHTML = '<caption class="py-8 text-left text-slate-500">No matching records found.</caption>';
     return;
   }
 
   const columns = Object.keys(records[0]);
   const head = document.createElement("thead");
   const row = document.createElement("tr");
+  row.className = "bg-slate-50";
 
   columns.forEach((column) => {
     const th = document.createElement("th");
-    th.className = "p-2 border-b border-slate-700";
+    th.className = "whitespace-nowrap border-b border-slate-200 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500";
     th.textContent = column;
     row.appendChild(th);
   });
@@ -173,9 +227,10 @@ function renderTable(records) {
   const body = document.createElement("tbody");
   records.forEach((record) => {
     const rowElement = document.createElement("tr");
+    rowElement.className = "hover:bg-slate-50";
     columns.forEach((column) => {
       const td = document.createElement("td");
-      td.className = "p-2 border-b border-slate-800";
+      td.className = "whitespace-nowrap border-b border-slate-100 px-3 py-3 text-slate-600";
       td.textContent = record[column] ?? "";
       rowElement.appendChild(td);
     });
@@ -187,6 +242,13 @@ function renderTable(records) {
 async function runQuery() {
   if (!state.user || !state.datasetId || !state.metadata) return;
 
+  const aggregation = $("aggregation").value;
+  const metric = $("metric-select").value;
+  if (aggregation !== "count" && !metric) {
+    status("This dataset has no numerical metric available for the selected calculation.", true);
+    return;
+  }
+
   try {
     status("Calculating…");
     const data = await api("/api/query", {
@@ -196,8 +258,8 @@ async function runQuery() {
         dataset_id: state.datasetId,
         search: $("global-search").value,
         filters: selectedFilters(),
-        aggregation: $("aggregation").value,
-        metric: $("metric-select").value,
+        aggregation,
+        metric,
         group_by: $("group-select").value,
       }),
     });
@@ -205,7 +267,7 @@ async function runQuery() {
     drawCharts(data.rows);
     renderTable(data.raw_records);
     $("insights").innerHTML = data.insights
-      .map((item) => '<li class="border-l-2 border-cyan-400 pl-3">' + escapeHtml(item) + "</li>")
+      .map((item) => '<li class="border-l-2 border-teal-500 pl-3 leading-6">' + escapeHtml(item) + "</li>")
       .join("");
 
     status("Analysis updated.");
@@ -221,7 +283,7 @@ function scheduleQuery() {
 
 function escapeHtml(value) {
   const element = document.createElement("div");
-  element.textContent = value;
+  element.textContent = value == null ? "" : String(value);
   return element.innerHTML;
 }
 
@@ -235,7 +297,8 @@ async function loadDatasets() {
 
     data.datasets.forEach((dataset) => {
       const button = document.createElement("button");
-      button.className = "block w-full text-left p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm";
+      button.type = "button";
+      button.className = "block w-full rounded-xl border border-slate-200 bg-white p-3 text-left text-sm text-slate-600 shadow-sm transition hover:border-teal-200 hover:bg-teal-50";
       button.textContent = dataset.filename + " · " + Number(dataset.row_count).toLocaleString() + " rows";
       button.onclick = () => {
         state.datasetId = dataset._id;
@@ -264,38 +327,89 @@ function setAuthMode(mode) {
   const signup = mode === "signup";
 
   $("auth-description").textContent = signup
-    ? "Create your free account and start analyzing your data."
+    ? "Create your account to securely access your personal analytics workspace."
     : "Sign in to continue to your analytics workspace.";
-  $("auth-submit").textContent = signup ? "Create free account" : "Sign in";
-  $("auth-password").autocomplete = signup ? "new-password" : "current-password";
+  $("auth-submit").textContent = signup ? "Create account" : "Sign in";
+  $("auth-footnote").textContent = signup
+    ? "Your account starts on the Free plan. Paid plans can be added later without changing your workspace."
+    : "Secure access to your personal analytics workspace.";
 
-  $("show-login").className = "auth-tab rounded-md py-2 text-sm font-medium " + (!signup ? "bg-cyan-500 text-slate-950" : "text-slate-400");
-  $("show-signup").className = "auth-tab rounded-md py-2 text-sm font-medium " + (signup ? "bg-cyan-500 text-slate-950" : "text-slate-400");
+  $("signup-name-fields").classList.toggle("hidden", !signup);
+  $("confirm-password-field").classList.toggle("hidden", !signup);
+  $("terms-field").classList.toggle("hidden", !signup);
+  $("terms-field").classList.toggle("flex", signup);
+
+  $("auth-first-name").required = signup;
+  $("auth-last-name").required = signup;
+  $("auth-confirm-password").required = signup;
+  $("accept-terms").required = signup;
+
+  $("auth-password").autocomplete = signup ? "new-password" : "current-password";
+  $("auth-confirm-password").autocomplete = "new-password";
+
+  $("show-login").className = "auth-tab rounded-lg px-3 py-2.5 text-sm font-semibold transition " +
+    (!signup ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700");
+  $("show-signup").className = "auth-tab rounded-lg px-3 py-2.5 text-sm font-semibold transition " +
+    (signup ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700");
+
   $("auth-error").classList.add("hidden");
+  $("auth-error").textContent = "";
 }
 
 $("auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+
+  const form = event.currentTarget;
   const error = $("auth-error");
   error.classList.add("hidden");
 
+  if (!form.reportValidity()) return;
+
+  const password = $("auth-password").value;
+  const confirmPassword = $("auth-confirm-password").value;
+
+  if (state.authMode === "signup" && password !== confirmPassword) {
+    error.textContent = "Passwords do not match.";
+    error.classList.remove("hidden");
+    $("auth-confirm-password").focus();
+    return;
+  }
+
+  const button = $("auth-submit");
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = state.authMode === "signup" ? "Creating account…" : "Signing in…";
+
   try {
     const endpoint = state.authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+    const payload = {
+      email: $("auth-email").value.trim(),
+      password,
+    };
+
+    if (state.authMode === "signup") {
+      payload.first_name = $("auth-first-name").value.trim();
+      payload.last_name = $("auth-last-name").value.trim();
+      payload.confirm_password = confirmPassword;
+      payload.accepted_terms = $("accept-terms").checked;
+    }
+
     const data = await api(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: $("auth-email").value.trim(),
-        password: $("auth-password").value,
-      }),
+      body: JSON.stringify(payload),
     });
 
     setAuthenticated(data.user);
+    $("auth-form").reset();
     await loadDatasets();
-    status(state.authMode === "signup" ? "Account created successfully." : "Welcome back.");
+    status(state.authMode === "signup" ? "Account created successfully. Welcome to BengaAnalytics." : "Welcome back.");
   } catch (requestError) {
     error.textContent = requestError.message;
     error.classList.remove("hidden");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
   }
 });
 
@@ -306,6 +420,8 @@ $("logout-btn").addEventListener("click", async () => {
   try {
     await api("/api/auth/logout", { method: "POST" });
   } finally {
+    $("auth-form").reset();
+    setAuthMode("login");
     setUnauthenticated();
   }
 });
