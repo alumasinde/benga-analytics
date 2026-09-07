@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Float, ForeignKey, Index, JSON,
+    BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON,
     MetaData, String, Table, Column, create_engine, desc, func, or_, select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -68,7 +68,7 @@ class Database:
         )
         self.records = Table(
             "records", self.metadata,
-            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
             Column("dataset_id", String(36), ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
             Column("tenant_id", String(36), nullable=False),
             Column("row_data", JSON, nullable=False),
@@ -76,7 +76,7 @@ class Database:
         )
         self.usage = Table(
             "usage", self.metadata,
-            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
             Column("tenant_id", String(36), nullable=False),
             Column("period_key", String(32), nullable=False),
             Column("counter_name", String(80), nullable=False),
@@ -96,7 +96,7 @@ class Database:
         )
         self.audit_logs = Table(
             "audit_logs", self.metadata,
-            Column("id", BigInteger, primary_key=True, autoincrement=True),
+            Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
             Column("tenant_id", String(36), nullable=False),
             Column("actor_id", String(36), nullable=True),
             Column("event_type", String(120), nullable=False),
