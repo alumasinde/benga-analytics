@@ -65,6 +65,8 @@ def build_subscription(tier=FREE):
 def normalize_user_subscription(user):
     subscription = user.get("subscription") or {}
     tier = subscription.get("tier") or user.get("tier") or FREE
+    if tier not in PLAN_CATALOG:
+        tier = FREE
     plan = plan_for(tier)
     return {
         "tier": tier,
