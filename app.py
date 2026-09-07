@@ -3,14 +3,14 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
-from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, session
 from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-import database
+from config.settings import get_settings
+from database import init_database
 from analyzer import build_insights, dataframe_records, infer_and_clean, read_dataframe
 from services.subscription_service import (
     FREE,
@@ -20,16 +20,16 @@ from services.subscription_service import (
     public_user,
 )
 
-load_dotenv()
-
+settings = get_settings()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = os.getenv("SECRET_KEY", "development-only-change-me")
-app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", 104857600))
+app.secret_key = settings["secret_key"]
+app.config["MAX_CONTENT_LENGTH"] = settings["max_content_length"]
+app.config["UPLOAD_FOLDER"] = settings["upload_folder"]
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.getenv("FLASK_ENV") == "production"
+app.config["SESSION_COOKIE_SECURE"] = settings["environment"] == "production"
 
-db = database.init_database()
+db = init_database()
 
 
 def now():
@@ -367,5 +367,5 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("PORT", 5000)),
-        debug=os.getenv("FLASK_ENV") != "production",
+        debug=settings["environment"] != "production",
     )
