@@ -33,7 +33,7 @@ class Database:
 
     def ensure_indexes(self):
         self.users.create_index([("email", ASCENDING)], unique=True)
-        self.users.create_index([("tenant_id", ASCENDING)])
+        self.users.create_index([("tenant_id", ASCENDING)], unique=True)
         self.datasets.create_index([("tenant_id", ASCENDING), ("created_at", DESCENDING)])
         self.datasets.create_index([("owner_id", ASCENDING), ("created_at", DESCENDING)])
         self.records.create_index([("dataset_id", ASCENDING)])
