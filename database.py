@@ -48,4 +48,11 @@ class Database:
         self.client.close()
 
 
-db = None\n\ndef init_database():\n    global db\n    if db is None:\n        db = Database()\n    return db
+db = None
+
+
+def init_database():
+    global db
+    if db is None:
+        db = Database()
+    return db
