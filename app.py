@@ -3,17 +3,22 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
-from bson import ObjectId
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, session
-from pymongo.errors import DuplicateKeyError
+from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 import database
 from analyzer import build_insights, dataframe_records, infer_and_clean, read_dataframe
-from services.subscription_service import FREE, build_subscription, normalize_user_subscription, plan_for, public_user
+from services.subscription_service import (
+    FREE,
+    build_subscription,
+    normalize_user_subscription,
+    plan_for,
+    public_user,
+)
 
 load_dotenv()
 
@@ -31,16 +36,14 @@ def now():
     return datetime.now(timezone.utc)
 
 
-def oid(value):
+def valid_uuid(value):
     try:
-        return ObjectId(value)
-    except Exception as exc:
+        return str(uuid.UUID(str(value)))
+    except (ValueError, TypeError, AttributeError) as exc:
         raise ValueError("Invalid identifier.") from exc
 
 
 def serialize(value):
-    if isinstance(value, ObjectId):
-        return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
@@ -55,7 +58,7 @@ def current_user():
     if not user_id:
         return None
     try:
-        return db.users.find_one({"_id": oid(user_id), "active": True})
+        return db.get_user_by_id(valid_uuid(user_id))
     except ValueError:
         session.clear()
         return None
@@ -68,6 +71,7 @@ def login_required(fn):
         if not user:
             return jsonify({"error": "Authentication required."}), 401
         return fn(user, *args, **kwargs)
+
     return wrapped
 
 
@@ -132,10 +136,13 @@ def signup():
     if password != confirm_password:
         return jsonify({"error": "Passwords do not match."}), 400
     if not accepted_terms:
-        return jsonify({"error": "You must accept the Terms of Service and Privacy Policy."}), 400
+        return jsonify({
+            "error": "You must accept the Terms of Service and Privacy Policy."
+        }), 400
 
     created = now()
     user = {
+        "id": str(uuid.uuid4()),
         "first_name": first_name,
         "last_name": last_name,
         "email": email,
@@ -145,7 +152,7 @@ def signup():
         "subscription": build_subscription(FREE),
         "terms": {
             "accepted": True,
-            "accepted_at": created,
+            "accepted_at": created.isoformat(),
             "version": "1.0",
         },
         "active": True,
@@ -154,12 +161,12 @@ def signup():
     }
 
     try:
-        result = db.users.insert_one(user)
-    except DuplicateKeyError:
+        db.create_user(user)
+    except IntegrityError:
         return jsonify({"error": "An account already exists for this email."}), 409
 
     session.clear()
-    session["user_id"] = str(result.inserted_id)
+    session["user_id"] = user["id"]
     return jsonify({"user": serialize(public_user(user))}), 201
 
 
@@ -169,12 +176,12 @@ def login():
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
 
-    user = db.users.find_one({"email": email, "active": True})
+    user = db.get_user_by_email(email)
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid email or password."}), 401
 
     session.clear()
-    session["user_id"] = str(user["_id"])
+    session["user_id"] = user["id"]
     return jsonify({"user": serialize(public_user(user))})
 
 
@@ -194,13 +201,18 @@ def me():
 
 @app.get("/api/plans")
 def plans():
-    return jsonify({"plans": {"free": plan_for("free"), "enterprise_pro": plan_for("enterprise_pro")}})
+    return jsonify({
+        "plans": {
+            "free": plan_for("free"),
+            "enterprise_pro": plan_for("enterprise_pro"),
+        }
+    })
 
 
 @app.get("/api/datasets")
 @login_required
 def list_datasets(user):
-    rows = list(db.datasets.find({"tenant_id": user["tenant_id"]}).sort("created_at", -1).limit(100))
+    rows = db.list_datasets(user["tenant_id"], limit=100)
     return jsonify({"datasets": serialize(rows)})
 
 
@@ -220,60 +232,88 @@ def upload(user):
 
     plan, subscription_state = active_plan_for(user)
     if not plan:
-        return jsonify({"error": "Your subscription is not active.", "subscription_status": subscription_state["status"]}), 403
+        return jsonify({
+            "error": "Your subscription is not active.",
+            "subscription_status": subscription_state["status"],
+        }), 403
 
-    dataset_count = db.datasets.count_documents({"tenant_id": user["tenant_id"]})
+    dataset_count = db.count_datasets(user["tenant_id"])
     if dataset_count >= plan["max_datasets"]:
-        return jsonify({"error": f"Dataset limit reached for the {plan['name']} plan.", "limit": plan["max_datasets"]}), 403
+        return jsonify({
+            "error": f"Dataset limit reached for the {plan['name']} plan.",
+            "limit": plan["max_datasets"],
+        }), 403
 
     df = read_dataframe(file)
     if len(df) > plan["max_rows_per_dataset"]:
-        return jsonify({"error": f"Your {plan['name']} plan allows {plan['max_rows_per_dataset']:,} rows per dataset.", "limit": plan["max_rows_per_dataset"]}), 403
+        return jsonify({
+            "error": (
+                f"Your {plan['name']} plan allows "
+                f"{plan['max_rows_per_dataset']:,} rows per dataset."
+            ),
+            "limit": plan["max_rows_per_dataset"],
+        }), 403
 
     df, metadata = infer_and_clean(df)
-    dataset_id = ObjectId()
+    dataset_id = str(uuid.uuid4())
+    created = now()
     dataset = {
-        "_id": dataset_id,
+        "id": dataset_id,
         "tenant_id": user["tenant_id"],
-        "owner_id": user["_id"],
+        "owner_id": user["id"],
         "filename": filename,
-        "created_at": now(),
-        "updated_at": now(),
+        "created_at": created,
+        "updated_at": created,
         "status": "ready",
-        "schema": metadata,
+        "schema_metadata": metadata,
         "row_count": metadata["row_count"],
     }
 
-    db.datasets.insert_one(dataset)
-    batch = []
-    try:
-        for row in dataframe_records(df):
-            row["dataset_id"] = dataset_id
-            row["tenant_id"] = user["tenant_id"]
-            batch.append(row)
-            if len(batch) >= 5000:
-                db.records.insert_many(batch, ordered=False)
-                batch = []
-        if batch:
-            db.records.insert_many(batch, ordered=False)
-    except Exception:
-        db.records.delete_many({"dataset_id": dataset_id})
-        db.datasets.delete_one({"_id": dataset_id})
-        raise
+    records = [
+        {
+            "dataset_id": dataset_id,
+            "tenant_id": user["tenant_id"],
+            "row_data": row,
+        }
+        for row in dataframe_records(df)
+    ]
 
-    return jsonify({"dataset": serialize(dataset), "metadata": serialize(metadata), "plan": {"name": plan["name"], "max_rows_per_dataset": plan["max_rows_per_dataset"], "max_datasets": plan["max_datasets"]}}), 201
+    db.create_dataset_with_records(dataset, records)
+
+    response_dataset = {
+        "_id": dataset["id"],
+        "id": dataset["id"],
+        "tenant_id": dataset["tenant_id"],
+        "owner_id": dataset["owner_id"],
+        "filename": dataset["filename"],
+        "created_at": dataset["created_at"],
+        "updated_at": dataset["updated_at"],
+        "status": dataset["status"],
+        "schema": metadata,
+        "row_count": dataset["row_count"],
+    }
+
+    return jsonify({
+        "dataset": serialize(response_dataset),
+        "metadata": serialize(metadata),
+        "plan": {
+            "name": plan["name"],
+            "max_rows_per_dataset": plan["max_rows_per_dataset"],
+            "max_datasets": plan["max_datasets"],
+        },
+    }), 201
 
 
 @app.post("/api/query")
 @login_required
 def query(user):
     payload = request.get_json(silent=True) or {}
-    dataset_id = oid(payload.get("dataset_id", ""))
-    dataset = db.datasets.find_one({"_id": dataset_id, "tenant_id": user["tenant_id"]})
+    dataset_id = valid_uuid(payload.get("dataset_id", ""))
+    dataset = db.get_dataset(dataset_id, user["tenant_id"])
     if not dataset:
         return jsonify({"error": "Dataset not found."}), 404
 
-    schema = dataset["schema"]
+    schema = dataset["schema_metadata"]
     dimensions = set(schema.get("dimensions", []))
     metrics = set(schema.get("metrics", []))
     dates = set(schema.get("dates", []))
@@ -290,42 +330,42 @@ def query(user):
         return jsonify({"error": "Invalid grouping field."}), 400
     if aggregation != "count" and metric not in metrics:
         return jsonify({"error": "Choose a valid numerical metric."}), 400
+    if not isinstance(filters, dict):
+        return jsonify({"error": "Filters must be an object."}), 400
 
-    match = {"dataset_id": dataset_id, "tenant_id": user["tenant_id"]}
-
+    valid_filters = {}
     for field, values in filters.items():
         if field in dimensions and isinstance(values, list) and values:
-            match[field] = {"$in": values[:1000]}
+            valid_filters[field] = values[:1000]
 
-    if search and dimensions:
-        match["$or"] = [{field: {"$regex": search[:200], "$options": "i"}} for field in dimensions]
-
-    value_expression = (
-        {"$sum": 1}
-        if aggregation == "count"
-        else ({"$sum": f"${metric}"} if aggregation == "sum" else {"$avg": f"${metric}"})
+    rows, raw = db.query_records(
+        dataset_id=dataset_id,
+        tenant_id=user["tenant_id"],
+        aggregation=aggregation,
+        metric=metric,
+        group_by=group_by,
+        filters=valid_filters,
+        search=search,
+        dimensions=list(dimensions),
     )
-
-    group_id = f"${group_by}" if group_by else None
-    result = list(db.records.aggregate([
-        {"$match": match},
-        {"$group": {"_id": group_id, "value": value_expression}},
-        {"$sort": {"value": -1}},
-        {"$limit": 1000},
-    ], allowDiskUse=True))
-
-    rows = [{"label": str(item["_id"]) if item["_id"] is not None else "All Records", "value": item["value"]} for item in result]
-    raw = list(db.records.find(match, {"dataset_id": 0, "tenant_id": 0}).limit(100))
 
     return jsonify({
         "rows": serialize(rows),
         "raw_records": serialize(raw),
         "insights": build_insights(rows, metric, aggregation, group_by),
-        "query": {"metric": metric, "aggregation": aggregation, "group_by": group_by},
+        "query": {
+            "metric": metric,
+            "aggregation": aggregation,
+            "group_by": group_by,
+        },
     })
 
 
 if __name__ == "__main__":
     db.ping()
-    db.ensure_indexes()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("FLASK_ENV") != "production")
+    db.ensure_schema()
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 5000)),
+        debug=os.getenv("FLASK_ENV") != "production",
+    )
