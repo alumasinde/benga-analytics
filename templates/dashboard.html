@@ -3,91 +3,178 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BengaAnalytics | Enterprise BI</title>
+<meta name="description" content="BengaAnalytics is a secure, dynamic business intelligence workspace for CSV and Excel data.">
+<title>BengaAnalytics | Business Intelligence</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          50: "#f0fdfa",
+          100: "#ccfbf1",
+          500: "#14b8a6",
+          600: "#0d9488",
+          700: "#0f766e"
+        }
+      },
+      boxShadow: {
+        soft: "0 16px 45px rgba(15, 23, 42, 0.08)"
+      }
+    }
+  }
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
+<body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
 <div class="flex min-h-screen">
-  <aside class="w-72 shrink-0 bg-slate-900 border-r border-slate-800 p-5 flex flex-col">
-    <h1 class="text-2xl font-bold">Benga<span class="text-cyan-400">Analytics</span></h1>
-    <p class="mt-1 text-xs text-slate-500">Dynamic business intelligence</p>
+  <aside class="hidden lg:flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-6">
+    <a href="/" class="flex items-center gap-3">
+      <span class="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-lg font-bold text-white">B</span>
+      <span>
+        <span class="block text-xl font-bold tracking-tight text-slate-900">Benga<span class="text-teal-600">Analytics</span></span>
+        <span class="block text-xs text-slate-500">Business intelligence, simplified</span>
+      </span>
+    </a>
 
-    <div id="profile" class="mt-8 p-4 rounded-xl bg-slate-800">Checking account…</div>
-    <div id="tier-card" class="mt-4 p-4 rounded-xl border border-cyan-700 bg-cyan-950/30"></div>
-    <button id="logout-btn" class="hidden mt-3 text-sm text-slate-400 hover:text-white">Sign out</button>
+    <div id="profile" class="mt-10 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">Checking account…</div>
+    <div id="tier-card" class="mt-4 rounded-2xl border border-teal-100 bg-teal-50 p-4"></div>
+    <button id="logout-btn" class="hidden mt-4 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50">Sign out</button>
 
-    <div id="workspace-controls" class="mt-6">
-      <label class="block text-sm font-medium">Upload Dataset</label>
-      <input id="file-input" type="file" accept=".csv,.xlsx" class="mt-2 block w-full text-sm">
-      <button id="upload-btn" class="mt-3 w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-semibold px-4 py-2 rounded-lg">Upload & Analyze</button>
-      <p id="status" class="mt-3 text-sm text-slate-400"></p>
+    <div id="workspace-controls" class="mt-8">
+      <label for="file-input" class="text-sm font-semibold text-slate-700">Upload dataset</label>
+      <p class="mt-1 text-xs text-slate-500">CSV and Excel files are analyzed automatically.</p>
+      <input id="file-input" type="file" accept=".csv,.xlsx" class="mt-3 block w-full rounded-xl border border-slate-200 bg-white text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-slate-700">
+      <button id="upload-btn" class="mt-3 w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50">Upload & Analyze</button>
+      <p id="status" class="mt-3 text-sm text-slate-500" role="status"></p>
 
-      <h2 class="mt-8 text-sm uppercase tracking-wider text-slate-400">Historical Datasets</h2>
+      <h2 class="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-400">Historical datasets</h2>
       <div id="dataset-list" class="mt-3 space-y-2 overflow-y-auto"></div>
     </div>
+
+    <p class="mt-auto pt-8 text-xs leading-5 text-slate-400">© BengaAnalytics. Your workspace is isolated by tenant.</p>
   </aside>
 
-  <main id="workspace" class="flex-1 p-5 md:p-8 overflow-x-hidden">
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-col lg:flex-row gap-3">
-        <input id="global-search" placeholder="Search your data…" class="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400">
-        <select id="aggregation" class="rounded-xl bg-slate-900 border border-slate-700 px-4">
-          <option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option>
-        </select>
-        <select id="metric-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
-        <select id="group-select" class="rounded-xl bg-slate-900 border border-slate-700 px-4"></select>
-        <select id="chart-type" class="rounded-xl bg-slate-900 border border-slate-700 px-4">
-          <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option>
-        </select>
-      </div>
-      <div id="dynamic-filters" class="flex flex-wrap gap-3"></div>
+  <main id="workspace" class="flex-1 overflow-x-hidden p-4 md:p-8">
+    <div class="mx-auto max-w-7xl">
+      <header class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="lg:hidden">
+          <h1 class="text-xl font-bold text-slate-900">Benga<span class="text-teal-600">Analytics</span></h1>
+          <p class="text-sm text-slate-500">Business intelligence, simplified</p>
+        </div>
+        <div class="flex flex-1 flex-col gap-3 lg:flex-row">
+          <input id="global-search" placeholder="Search across your data…" class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+          <select id="aggregation" aria-label="Aggregation" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-500">
+            <option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option>
+          </select>
+          <select id="metric-select" aria-label="Metric" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-500"></select>
+          <select id="group-select" aria-label="Group by" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-500"></select>
+          <select id="chart-type" aria-label="Chart type" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-500">
+            <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option>
+          </select>
+        </div>
+      </header>
+
+      <div id="dynamic-filters" class="mb-6 flex flex-wrap gap-3"></div>
+
+      <section class="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div class="xl:col-span-2 min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-soft"><canvas id="main-chart"></canvas></div>
+        <div class="min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-soft"><canvas id="secondary-chart"></canvas></div>
+      </section>
+
+      <section class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <h2 class="font-semibold text-slate-900">Automated Insights</h2>
+          <p class="mt-1 text-sm text-slate-500">Highlights generated from your current analysis.</p>
+          <ul id="insights" class="mt-4 space-y-3 text-sm text-slate-600"></ul>
+        </div>
+        <div class="overflow-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-soft xl:col-span-2">
+          <h2 class="font-semibold text-slate-900">Raw Data Preview</h2>
+          <p class="mt-1 text-sm text-slate-500">A preview of the records matching your current query.</p>
+          <table id="raw-table" class="mt-4 w-full text-left text-sm"></table>
+        </div>
+      </section>
     </div>
-
-    <section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-6">
-      <div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="main-chart"></canvas></div>
-      <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5"><canvas id="secondary-chart"></canvas></div>
-    </section>
-
-    <section class="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-5">
-      <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 class="font-semibold">Automated Insights</h2>
-        <ul id="insights" class="mt-3 space-y-3 text-slate-300"></ul>
-      </div>
-      <div class="xl:col-span-2 bg-slate-900 rounded-2xl border border-slate-800 p-5 overflow-auto">
-        <h2 class="font-semibold mb-4">Raw Data Preview</h2>
-        <table id="raw-table" class="w-full text-sm text-left"></table>
-      </div>
-    </section>
   </main>
 </div>
 
-<div id="auth-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
-  <div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl p-7">
-    <div class="text-center">
-      <h2 class="text-2xl font-bold">Welcome to <span class="text-cyan-400">BengaAnalytics</span></h2>
-      <p id="auth-description" class="mt-2 text-sm text-slate-400">Create your free account to start analyzing your data.</p>
-    </div>
+<div id="auth-modal" class="fixed inset-0 z-50 overflow-y-auto bg-slate-50/95 backdrop-blur-sm">
+  <div class="mx-auto flex min-h-full max-w-6xl items-center justify-center p-4 md:p-8">
+    <section class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft lg:grid-cols-[0.9fr_1.1fr]">
+      <div class="hidden bg-gradient-to-br from-teal-600 via-cyan-600 to-sky-600 p-10 text-white lg:flex lg:flex-col">
+        <a href="/" class="flex items-center gap-3">
+          <span class="grid h-11 w-11 place-items-center rounded-xl bg-white/15 text-xl font-bold">B</span>
+          <span class="text-2xl font-bold">BengaAnalytics</span>
+        </a>
+        <div class="my-auto">
+          <p class="text-sm font-semibold uppercase tracking-[0.2em] text-teal-50">Your data, clearly understood</p>
+          <h1 class="mt-5 text-4xl font-bold leading-tight">Turn everyday spreadsheets into decisions.</h1>
+          <p class="mt-5 max-w-sm text-base leading-7 text-teal-50">Upload CSV or Excel files, discover metrics automatically, and explore your data with dynamic dashboards.</p>
+        </div>
+        <div class="space-y-3 text-sm text-teal-50">
+          <p>✓ Secure personal workspace</p>
+          <p>✓ Automatic schema discovery</p>
+          <p>✓ Interactive analytics and filters</p>
+        </div>
+      </div>
 
-    <div class="mt-6 grid grid-cols-2 rounded-lg bg-slate-800 p-1">
-      <button id="show-login" class="auth-tab rounded-md py-2 text-sm font-medium">Sign in</button>
-      <button id="show-signup" class="auth-tab rounded-md py-2 text-sm font-medium">Create account</button>
-    </div>
+      <div class="p-6 sm:p-10">
+        <div class="mx-auto max-w-md">
+          <div class="text-center">
+            <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-xl font-bold text-teal-700 lg:hidden">B</div>
+            <h2 class="mt-4 text-3xl font-bold tracking-tight text-slate-900">Welcome to <span class="text-teal-600">BengaAnalytics</span></h2>
+            <p id="auth-description" class="mt-2 text-sm leading-6 text-slate-500">Sign in to continue to your analytics workspace.</p>
+          </div>
 
-    <form id="auth-form" class="mt-6 space-y-4">
-      <label class="block text-sm">
-        <span class="text-slate-300">Email address</span>
-        <input id="auth-email" type="email" autocomplete="email" required class="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-3 outline-none focus:border-cyan-400">
-      </label>
-      <label class="block text-sm">
-        <span class="text-slate-300">Password</span>
-        <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required class="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-3 outline-none focus:border-cyan-400">
-      </label>
-      <p id="auth-error" class="hidden text-sm text-red-400"></p>
-      <button id="auth-submit" type="submit" class="w-full rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold py-3">Sign in</button>
-    </form>
+          <div class="mt-7 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+            <button type="button" id="show-login" class="auth-tab rounded-lg px-3 py-2.5 text-sm font-semibold transition">Sign in</button>
+            <button type="button" id="show-signup" class="auth-tab rounded-lg px-3 py-2.5 text-sm font-semibold transition">Create account</button>
+          </div>
 
-    <p class="mt-5 text-center text-xs text-slate-500">The Free plan is active now. Paid plans can be added without changing your account or data structure.</p>
+          <form id="auth-form" class="mt-7 space-y-4" novalidate>
+            <div id="signup-name-fields" class="hidden grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label class="block text-sm font-medium text-slate-700">
+                First name
+                <input id="auth-first-name" type="text" autocomplete="given-name" maxlength="80" class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+              </label>
+              <label class="block text-sm font-medium text-slate-700">
+                Last name
+                <input id="auth-last-name" type="text" autocomplete="family-name" maxlength="80" class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+              </label>
+            </div>
+
+            <label class="block text-sm font-medium text-slate-700">
+              Email address
+              <input id="auth-email" type="email" autocomplete="email" required class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+            </label>
+
+            <label class="block text-sm font-medium text-slate-700">
+              Password
+              <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+              <span id="password-help" class="mt-1.5 block text-xs font-normal text-slate-500">Use at least 8 characters.</span>
+            </label>
+
+            <label id="confirm-password-field" class="hidden text-sm font-medium text-slate-700">
+              Confirm password
+              <input id="auth-confirm-password" type="password" autocomplete="new-password" minlength="8" class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-50">
+            </label>
+
+            <label id="terms-field" class="hidden items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm text-slate-600">
+              <input id="accept-terms" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500">
+              <span>I confirm that I have read and agree to the <a href="/terms" class="font-medium text-teal-700 hover:text-teal-800">Terms of Service</a> and <a href="/privacy" class="font-medium text-teal-700 hover:text-teal-800">Privacy Policy</a>.</span>
+            </label>
+
+            <p id="auth-error" class="hidden rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700" role="alert"></p>
+
+            <button id="auth-submit" type="submit" class="w-full rounded-xl bg-teal-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-100 disabled:cursor-not-allowed disabled:opacity-60">Sign in</button>
+          </form>
+
+          <p id="auth-footnote" class="mt-5 text-center text-xs leading-5 text-slate-500">Secure access to your personal analytics workspace.</p>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
 
